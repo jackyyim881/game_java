@@ -6,9 +6,15 @@ import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.RadialGradient;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Shader;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import android.media.MediaPlayer;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -36,6 +42,14 @@ public class TricksterPathActivity extends AppCompatActivity {
     // 常量
     private static final int MAX_LEVEL = 10;
     private static final int DEATH_COUNT_TO_HINT = 3; // 死亡3次后给提示
+    
+    // 音效播放器
+    private MediaPlayer mpNani;
+    private MediaPlayer mpYeehaw;
+    private MediaPlayer mpLaugh;
+    private MediaPlayer mpCollect;
+    private MediaPlayer mpFail;
+    private MediaPlayer mpWin;
     
     // 3D效果设置
     private boolean is3DMode = true;  // 3D模式开关
@@ -84,6 +98,20 @@ public class TricksterPathActivity extends AppCompatActivity {
     private long lastWPressTime = 0; // 上次W键按下的时间
     private static final long DOUBLE_PRESS_INTERVAL = 300; // 双击间隔时间（毫秒）
     
+    // 光照系统
+    private SensorManager sensorManager;
+    private Sensor lightSensor;
+    private float currentLightLevel = 100; // 默认光照值
+    private static final float MAX_LIGHT_LEVEL = 1000; // 最大光照级别
+    private boolean isAmbientLightEnabled = true; // 环境光开关
+    private int sunlightColor = Color.parseColor("#FFFFCC"); // 阳光颜色
+    private float sunPosX = 0.2f; // 太阳水平位置（相对于屏幕宽度的比例）
+    private float sunPosY = 0.1f; // 太阳垂直位置（相对于屏幕高度的比例）
+    private float sunRadius = 80; // 太阳半径
+    private float sunIntensity = 1.0f; // 阳光强度
+    private float[] recentLightReadings = new float[5]; // 存储最近几次光线传感器读数
+    private int readingsIndex = 0; // 读数索引
+    
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -94,6 +122,9 @@ public class TricksterPathActivity extends AppCompatActivity {
         scoreText = findViewById(R.id.scoreText);
         messageText = findViewById(R.id.messageText);
         restartButton = findViewById(R.id.restartButton);
+        
+        // 初始化音效播放器
+        initializeSoundPlayers();
         
         // 初始化方向控制按钮
         btnUp = findViewById(R.id.btnUp);
@@ -150,6 +181,94 @@ public class TricksterPathActivity extends AppCompatActivity {
         gameView.setFocusable(true);
         gameView.setFocusableInTouchMode(true);
         gameView.requestFocus();
+        
+        // 初始化光照传感器
+        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        if (sensorManager != null) {
+            lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
+            if (lightSensor != null) {
+                sensorManager.registerListener(lightSensorListener, lightSensor, SensorManager.SENSOR_DELAY_NORMAL);
+            } else {
+                Log.d("TricksterGame", "设备没有光线传感器");
+            }
+        }
+        
+        // 添加光照模式切换按钮
+        Button btnLightMode = new Button(this);
+        btnLightMode.setText("环境光");
+        btnLightMode.setOnClickListener(v -> toggleAmbientLight());
+        
+        // 设置按钮样式和位置
+        FrameLayout.LayoutParams lightBtnParams = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        );
+        lightBtnParams.gravity = android.view.Gravity.TOP | android.view.Gravity.END;
+        lightBtnParams.topMargin = 70; // 放在3D模式按钮下方
+        lightBtnParams.rightMargin = 10;
+        btnLightMode.setLayoutParams(lightBtnParams);
+        
+        // 设置按钮背景和样式
+        btnLightMode.setBackgroundColor(Color.parseColor("#FFC107"));
+        btnLightMode.setTextColor(Color.BLACK);
+        btnLightMode.setPadding(20, 10, 20, 10);
+        btnLightMode.setAlpha(0.8f);
+        
+        gameContainer.addView(btnLightMode);
+    }
+    
+    /**
+     * 初始化所有音效播放器
+     */
+    private void initializeSoundPlayers() {
+        mpNani = MediaPlayer.create(this, R.raw.nani);
+        mpYeehaw = MediaPlayer.create(this, R.raw.yeehaw);
+        mpLaugh = MediaPlayer.create(this, R.raw.laugh);
+        mpCollect = MediaPlayer.create(this, R.raw.collect_sound);
+        mpFail = MediaPlayer.create(this, R.raw.fail_sound);
+        mpWin = MediaPlayer.create(this, R.raw.win_sound);
+    }
+    
+    /**
+     * 播放指定的音效
+     * @param mediaPlayer 要播放的MediaPlayer对象
+     */
+    private void playSound(MediaPlayer mediaPlayer) {
+        if (mediaPlayer != null) {
+            try {
+                // 如果正在播放，先停止
+                if (mediaPlayer.isPlaying()) {
+                    mediaPlayer.stop();
+                    mediaPlayer.prepare();
+                    mediaPlayer.seekTo(0);
+                }
+                // 播放音效
+                mediaPlayer.start();
+            } catch (Exception e) {
+                Log.e("TricksterGame", "播放音效失败: " + e.getMessage());
+                
+                // 如果出错，尝试重新创建
+                if (mediaPlayer == mpNani) {
+                    mpNani = MediaPlayer.create(this, R.raw.nani);
+                    if (mpNani != null) mpNani.start();
+                } else if (mediaPlayer == mpYeehaw) {
+                    mpYeehaw = MediaPlayer.create(this, R.raw.yeehaw);
+                    if (mpYeehaw != null) mpYeehaw.start();
+                } else if (mediaPlayer == mpLaugh) {
+                    mpLaugh = MediaPlayer.create(this, R.raw.laugh);
+                    if (mpLaugh != null) mpLaugh.start();
+                } else if (mediaPlayer == mpCollect) {
+                    mpCollect = MediaPlayer.create(this, R.raw.collect_sound);
+                    if (mpCollect != null) mpCollect.start();
+                } else if (mediaPlayer == mpFail) {
+                    mpFail = MediaPlayer.create(this, R.raw.fail_sound);
+                    if (mpFail != null) mpFail.start();
+                } else if (mediaPlayer == mpWin) {
+                    mpWin = MediaPlayer.create(this, R.raw.win_sound);
+                    if (mpWin != null) mpWin.start();
+                }
+            }
+        }
     }
     
     private void initializeGame() {
@@ -174,30 +293,48 @@ public class TricksterPathActivity extends AppCompatActivity {
                 break;
             case 2:
                 createLevel2();
+                // 关卡2播放yeehaw音效
+                playSound(mpYeehaw);
                 break;
             case 3:
                 createLevel3();
+                // 关卡3播放nani音效，因为有隐形平台
+                playSound(mpNani);
                 break;
             case 4:
                 createLevel4();
+                // 关卡4播放yeehaw音效，因为有弹簧陷阱
+                playSound(mpYeehaw);
                 break;
             case 5:
                 createLevel5();
                 break;
             case 6:
                 createLevel6();
+                // 关卡6播放laugh音效，因为是疯狂关卡
+                playSound(mpLaugh);
                 break;
             case 7:
                 createLevel7();
+                // 关卡7播放yeehaw音效，因为是跳跃挑战
+                playSound(mpYeehaw);
                 break;
             case 8:
                 createLevel8();
+                // 关卡8播放nani音效，因为是迷宫陷阱
+                playSound(mpNani);
                 break;
             case 9:
                 createLevel9();
+                // 关卡9播放laugh音效，因为有反向引导
+                playSound(mpLaugh);
                 break;
             case 10:
                 createLevel10();
+                // 最终关卡播放所有音效，依次播放
+                new Handler().postDelayed(() -> playSound(mpNani), 0);
+                new Handler().postDelayed(() -> playSound(mpYeehaw), 1000);
+                new Handler().postDelayed(() -> playSound(mpLaugh), 2000);
                 break;
             default:
                 createLevel1();
@@ -618,6 +755,9 @@ public class TricksterPathActivity extends AppCompatActivity {
         deathCount++;
         vibrator.vibrate(500); // 震动反馈
         
+        // 播放失败音效
+        playSound(mpFail);
+        
         // 显示嘲讽消息
         String[] taunts = {
             "Haha, you died again!",
@@ -632,6 +772,8 @@ public class TricksterPathActivity extends AppCompatActivity {
         if (deathCount % DEATH_COUNT_TO_HINT == 0) {
             new Handler().postDelayed(() -> {
                 messageText.setText("Hint: Not everything is as it seems...");
+                // 连续死亡多次后，给出提示时播放nani音效
+                playSound(mpNani);
             }, 2000);
         }
         
@@ -722,6 +864,8 @@ public class TricksterPathActivity extends AppCompatActivity {
                         player.velocityY = -15;
                         player.isJumping = true;
                         messageText.setText("Jump!");
+                        // 播放yeehaw音效
+                        playSound(mpYeehaw);
                     }
                     break;
                 case MotionEvent.ACTION_UP:
@@ -787,6 +931,8 @@ public class TricksterPathActivity extends AppCompatActivity {
                         player.velocityY = -15;
                         player.isJumping = true;
                         messageText.setText("Jump!");
+                        // 播放yeehaw音效
+                        playSound(mpYeehaw);
                     }
                     break;
             }
@@ -802,6 +948,9 @@ public class TricksterPathActivity extends AppCompatActivity {
                         player.velocityY = -15; // 再次提供向上的推力
                         player.hasUsedDoubleJump = true; // 标记已使用双跳
                         messageText.setText("Double Jump!");
+                        
+                        // 播放nani音效表示惊讶的双跳
+                        playSound(mpNani);
                         
                         // 视觉反馈
                         try {
@@ -839,6 +988,9 @@ public class TricksterPathActivity extends AppCompatActivity {
                             player.hasUsedDoubleJump = true;
                             messageText.setText("Double Jump!");
                             
+                            // 播放nani音效
+                            playSound(mpNani);
+                            
                             // 视觉反馈
                             try {
                                 vibrator.vibrate(50);
@@ -851,6 +1003,9 @@ public class TricksterPathActivity extends AppCompatActivity {
                         player.velocityY = -15;
                         player.isJumping = true;
                         messageText.setText("Jump!");
+                        
+                        // 播放yeehaw音效
+                        playSound(mpYeehaw);
                     }
                     
                     // 更新状态
@@ -998,6 +1153,50 @@ public class TricksterPathActivity extends AppCompatActivity {
         gameView.invalidate();
     }
     
+    // 环境光开关
+    private void toggleAmbientLight() {
+        isAmbientLightEnabled = !isAmbientLightEnabled;
+        Toast.makeText(this, isAmbientLightEnabled ? "环境光已开启" : "环境光已关闭", Toast.LENGTH_SHORT).show();
+        
+        // 如果关闭环境光，则设置为默认光照水平
+        if (!isAmbientLightEnabled) {
+            currentLightLevel = 100;
+        }
+    }
+    
+    // 光线传感器监听器
+    private SensorEventListener lightSensorListener = new SensorEventListener() {
+        @Override
+        public void onSensorChanged(SensorEvent event) {
+            if (isAmbientLightEnabled) {
+                // 获取当前光线传感器读数
+                float reading = event.values[0];
+                
+                // 将读数添加到最近读数数组
+                recentLightReadings[readingsIndex] = reading;
+                readingsIndex = (readingsIndex + 1) % recentLightReadings.length;
+                
+                // 计算平均值以平滑光照变化
+                float sum = 0;
+                for (float value : recentLightReadings) {
+                    sum += value;
+                }
+                float averageReading = sum / recentLightReadings.length;
+                
+                // 更新当前光照水平（限制在最大值内）
+                currentLightLevel = Math.min(averageReading, MAX_LIGHT_LEVEL);
+                
+                // 根据光照水平调整太阳强度
+                sunIntensity = 0.5f + (currentLightLevel / MAX_LIGHT_LEVEL) * 0.5f;
+            }
+        }
+
+        @Override
+        public void onAccuracyChanged(Sensor sensor, int accuracy) {
+            // 不需要处理
+        }
+    };
+    
     // 游戏视图类
     private class TrickGameView extends View {
         private Paint paint;
@@ -1011,6 +1210,9 @@ public class TricksterPathActivity extends AppCompatActivity {
         private long lastTouchTime = 0;
         private boolean isDoubleTapWindow = false;
         private static final long DOUBLE_TAP_WINDOW = 300; // 双击检测窗口期（毫秒）
+        
+        // 阴影区域的渐变颜色
+        private int darkAreaColor = Color.parseColor("#99000000"); // 半透明黑色
         
         public TrickGameView(Context context) {
             super(context);
@@ -1125,12 +1327,16 @@ public class TricksterPathActivity extends AppCompatActivity {
                         messageText.setText(element.message);
                         new Handler().postDelayed(() -> messageText.setText(""), 2000);
                     }
+                    // 播放"nani"音效，表示惊讶
+                    playSound(mpNani);
                     break;
                     
                 case TrickElement.TYPE_TRAMPOLINE:
                     // 弹簧会弹起玩家
                     player.velocityY = -20;
                     player.isJumping = true;
+                    // 播放"yeehaw"音效，表示兴奋
+                    playSound(mpYeehaw);
                     break;
                     
                 case TrickElement.TYPE_REVERSE:
@@ -1141,12 +1347,16 @@ public class TricksterPathActivity extends AppCompatActivity {
                         messageText.setText(element.message);
                         new Handler().postDelayed(() -> messageText.setText(""), 2000);
                     }
+                    // 播放"nani"音效，表示惊讶/困惑
+                    playSound(mpNani);
                     break;
                     
                 case TrickElement.TYPE_GOAL:
                     // 到达目标，确保只触发一次并防止状态混乱
                     if (element.isActive) {
                         element.isActive = false; // 防止重复触发
+                        // 播放胜利音效
+                        playSound(mpWin);
                         // 使用Handler确保在主线程上处理
                         new Handler(Looper.getMainLooper()).post(() -> nextLevel());
                     }
@@ -1163,6 +1373,9 @@ public class TricksterPathActivity extends AppCompatActivity {
                     } else {
                         messageText.setText("Haha, this is not the real goal!");
                     }
+                    
+                    // 播放嘲笑音效
+                    playSound(mpLaugh);
                     
                     // 震动反馈
                     try {
@@ -1218,13 +1431,11 @@ public class TricksterPathActivity extends AppCompatActivity {
         protected void onDraw(Canvas canvas) {
             super.onDraw(canvas);
             
-            // 绘制3D背景
-            if (is3DMode) {
-                drawBackground(canvas);
-            } else {
-                // 绘制原始背景
-                canvas.drawColor(Color.BLACK);
-            }
+            // 绘制背景
+            drawBackground(canvas);
+            
+            // 绘制太阳和光照效果
+            drawSunAndLighting(canvas);
             
             // 更新背景图层
             for (BackgroundLayer layer : backgroundLayers) {
@@ -1290,7 +1501,54 @@ public class TricksterPathActivity extends AppCompatActivity {
             }
         }
         
-        // 绘制3D背景
+        // 绘制太阳和光照效果
+        private void drawSunAndLighting(Canvas canvas) {
+            // 太阳位置
+            float sunX = getWidth() * sunPosX;
+            float sunY = getHeight() * sunPosY;
+            
+            // 绘制太阳光晕
+            Paint sunGlowPaint = new Paint();
+            sunGlowPaint.setStyle(Paint.Style.FILL);
+            
+            // 创建径向渐变作为太阳光晕
+            int adjustedSunlightColor = adjustColorByLight(sunlightColor);
+            RadialGradient sunGradient = new RadialGradient(
+                sunX, sunY,
+                sunRadius * 3 * sunIntensity,
+                new int[] {adjustedSunlightColor, Color.argb(100, 255, 255, 200), Color.TRANSPARENT},
+                new float[] {0.1f, 0.3f, 1.0f},
+                Shader.TileMode.CLAMP
+            );
+            sunGlowPaint.setShader(sunGradient);
+            canvas.drawCircle(sunX, sunY, sunRadius * 3 * sunIntensity, sunGlowPaint);
+            
+            // 绘制太阳本体
+            Paint sunPaint = new Paint();
+            sunPaint.setColor(adjustedSunlightColor);
+            sunPaint.setStyle(Paint.Style.FILL);
+            canvas.drawCircle(sunX, sunY, sunRadius * 0.7f, sunPaint);
+            
+            // 如果光照级别较低，绘制暗区
+            if (currentLightLevel < 100) {
+                // 计算暗区透明度 - 光线越暗，透明度越低（越黑）
+                int alpha = (int)(180 * (1 - currentLightLevel / 100));
+                
+                // 创建径向渐变作为光照区域
+                RadialGradient lightGradient = new RadialGradient(
+                    sunX, sunY,
+                    getWidth() * sunIntensity,
+                    Color.TRANSPARENT,
+                    Color.argb(alpha, 0, 0, 0),
+                    Shader.TileMode.CLAMP
+                );
+                
+                Paint darkAreaPaint = new Paint();
+                darkAreaPaint.setShader(lightGradient);
+                canvas.drawRect(0, 0, getWidth(), getHeight(), darkAreaPaint);
+            }
+        }
+        
         private void drawBackground(Canvas canvas) {
             // 绘制渐变背景
             Paint bgPaint = new Paint();
@@ -1360,6 +1618,9 @@ public class TricksterPathActivity extends AppCompatActivity {
         // 绘制3D元素
         private void draw3DElement(Canvas canvas, TrickElement element) {
             int elementColor = getColorForElementType(element.type);
+            
+            // 根据当前光照调整颜色
+            elementColor = adjustColorByLight(elementColor);
             
             // 计算透视缩放 - 越靠近屏幕底部的对象显得越大
             float depthFactor = 1.0f - (element.y / getHeight()) * 0.3f;
@@ -1649,70 +1910,83 @@ public class TricksterPathActivity extends AppCompatActivity {
         
         // 绘制3D玩家
         private void draw3DPlayer(Canvas canvas) {
-            float x = player.x;
-            float y = player.y;
-            float width = player.width;
-            float height = player.height;
+            // 调整玩家颜色为基于光照的蓝色
+            int playerColor = adjustColorByLight(Color.BLUE);
+            
+            // 计算透视缩放
+            float depthFactor = 1.0f - (player.y / getHeight()) * 0.3f;
+            
+            // 玩家宽高
+            float width = player.width * depthFactor;
+            float height = player.height * depthFactor;
             
             // 绘制阴影
             paint.setColor(Color.BLACK);
-            paint.setAlpha(100);
-            canvas.drawOval(x + shadowOffset, y + height - 10 + shadowOffset, 
-                           x + width + shadowOffset, y + height + 5 + shadowOffset, paint);
+            paint.setAlpha(80);
+            RectF shadowRect = new RectF(player.x + shadowOffset, player.y + shadowOffset,
+                                      player.x + width + shadowOffset, player.y + height + shadowOffset);
+            canvas.drawRect(shadowRect, paint);
             paint.setAlpha(255);
             
-            // 绘制腿部
-            paint.setColor(Color.parseColor("#1a75ff"));
-            canvas.drawRect(x + width/4, y + height/2, x + width/2 - 2, y + height - 5, paint);
-            canvas.drawRect(x + width/2 + 2, y + height/2, x + width*3/4, y + height - 5, paint);
+            // 绘制主体
+            paint.setColor(playerColor);
+            canvas.drawRect(player.x, player.y, player.x + width, player.y + height, paint);
             
-            // 绘制身体
-            paint.setColor(Color.CYAN);
-            canvas.drawRoundRect(x + width/6, y + height/3, x + width*5/6, y + height/2 + 5, 8, 8, paint);
+            // 绘制侧面
+            paint.setColor(darker(playerColor));
+            Path sidePath = new Path();
+            sidePath.moveTo(player.x + width, player.y);
+            sidePath.lineTo(player.x + width + shadowOffset, player.y + shadowOffset);
+            sidePath.lineTo(player.x + width + shadowOffset, player.y + height + shadowOffset);
+            sidePath.lineTo(player.x + width, player.y + height);
+            sidePath.close();
+            canvas.drawPath(sidePath, paint);
             
-            // 绘制头部
-            paint.setColor(Color.parseColor("#FFD700")); // 金色头发
-            canvas.drawRect(x + width/4, y, x + width*3/4, y + 5, paint);
+            // 绘制顶面
+            paint.setColor(brighter(playerColor));
+            Path topPath = new Path();
+            topPath.moveTo(player.x, player.y);
+            topPath.lineTo(player.x + shadowOffset, player.y + shadowOffset);
+            topPath.lineTo(player.x + width + shadowOffset, player.y + shadowOffset);
+            topPath.lineTo(player.x + width, player.y);
+            topPath.close();
+            canvas.drawPath(topPath, paint);
             
+            // 画出眼睛（根据朝向调整）
             paint.setColor(Color.WHITE);
-            canvas.drawOval(x + width/4, y + 5, x + width*3/4, y + height/3, paint);
+            float eyeSize = width / 6;
+            float eyeY = player.y + height / 3;
+            float leftEyeX, rightEyeX;
             
-            // 绘制眼睛
-            paint.setColor(Color.BLACK);
-            float eyeOffset = player.isFacingRight ? 5 : -5;
-            canvas.drawCircle(x + width/2 + eyeOffset, y + height/6, 3, paint);
-            
-            // 绘制嘴巴
-            paint.setStrokeWidth(2);
-            float mouthY = y + height/4;
-            canvas.drawLine(x + width/2 - 5, mouthY, x + width/2 + 5, mouthY, paint);
-            
-            // 绘制手臂
-            paint.setColor(Color.CYAN);
-            // 根据跳跃状态调整手臂位置
-            if (player.isJumping) {
-                // 跳跃时手臂上举
-                canvas.drawRect(x + width/8, y + height/3, x + width/4, y + height/2, paint);
-                canvas.drawRect(x + width*3/4, y + height/3, x + width*7/8, y + height/2, paint);
+            if (player.isFacingRight) {
+                leftEyeX = player.x + width / 4;
+                rightEyeX = player.x + width * 3 / 4;
             } else {
-                // 正常时手臂在身体两侧
-                canvas.drawRect(x + width/8, y + height/3, x + width/4, y + height/2 + 10, paint);
-                canvas.drawRect(x + width*3/4, y + height/3, x + width*7/8, y + height/2 + 10, paint);
+                rightEyeX = player.x + width / 4;
+                leftEyeX = player.x + width * 3 / 4;
             }
             
-            // 如果正在使用双跳，添加特效
-            if (player.isJumping && player.hasUsedDoubleJump) {
-                // 添加双跳效果 - 蓝色光环
-                paint.setColor(Color.parseColor("#4287f5"));
-                paint.setStyle(Paint.Style.STROKE);
+            canvas.drawCircle(leftEyeX, eyeY, eyeSize, paint);
+            canvas.drawCircle(rightEyeX, eyeY, eyeSize, paint);
+            
+            // 眼珠（黑色）
+            paint.setColor(adjustColorByLight(Color.BLACK));  // 调整颜色
+            float pupilOffset = player.isFacingRight ? eyeSize / 3 : -eyeSize / 3;
+            canvas.drawCircle(leftEyeX + pupilOffset, eyeY, eyeSize / 2, paint);
+            canvas.drawCircle(rightEyeX + pupilOffset, eyeY, eyeSize / 2, paint);
+            
+            // 如果玩家死亡，绘制X眼睛
+            if (player.isDead) {
+                paint.setColor(Color.RED);
                 paint.setStrokeWidth(3);
-                paint.setAlpha(150);
                 
-                float effectRadius = width * 0.8f;
-                canvas.drawCircle(x + width/2, y + height/2, effectRadius, paint);
+                // 左眼X
+                canvas.drawLine(leftEyeX - eyeSize, eyeY - eyeSize, leftEyeX + eyeSize, eyeY + eyeSize, paint);
+                canvas.drawLine(leftEyeX + eyeSize, eyeY - eyeSize, leftEyeX - eyeSize, eyeY + eyeSize, paint);
                 
-                paint.setStyle(Paint.Style.FILL);
-                paint.setAlpha(255);
+                // 右眼X
+                canvas.drawLine(rightEyeX - eyeSize, eyeY - eyeSize, rightEyeX + eyeSize, eyeY + eyeSize, paint);
+                canvas.drawLine(rightEyeX + eyeSize, eyeY - eyeSize, rightEyeX - eyeSize, eyeY + eyeSize, paint);
             }
         }
         
@@ -1754,6 +2028,26 @@ public class TricksterPathActivity extends AppCompatActivity {
                 default:
                     return Color.GRAY;
             }
+        }
+        
+        // 根据当前光照级别调整颜色亮度
+        private int adjustColorByLight(int color) {
+            if (!isAmbientLightEnabled) return color;
+            
+            // 获取原始颜色的RGB分量
+            int red = Color.red(color);
+            int green = Color.green(color);
+            int blue = Color.blue(color);
+            
+            // 计算亮度系数 (0.5-1.5)
+            float lightFactor = 0.5f + (currentLightLevel / MAX_LIGHT_LEVEL);
+            
+            // 调整RGB值
+            red = Math.min(255, Math.max(0, (int)(red * lightFactor)));
+            green = Math.min(255, Math.max(0, (int)(green * lightFactor)));
+            blue = Math.min(255, Math.max(0, (int)(blue * lightFactor)));
+            
+            return Color.rgb(red, green, blue);
         }
         
         @Override
@@ -1833,6 +2127,11 @@ public class TricksterPathActivity extends AppCompatActivity {
         if (gameView != null) {
             gameView.stopGameLoop();
         }
+        
+        // 取消注册光线传感器
+        if (sensorManager != null) {
+            sensorManager.unregisterListener(lightSensorListener);
+        }
     }
     
     @Override
@@ -1842,6 +2141,11 @@ public class TricksterPathActivity extends AppCompatActivity {
         if (gameView != null) {
             gameView.startGameLoop();
         }
+        
+        // 重新注册光线传感器
+        if (sensorManager != null && lightSensor != null) {
+            sensorManager.registerListener(lightSensorListener, lightSensor, SensorManager.SENSOR_DELAY_NORMAL);
+        }
     }
     
     @Override
@@ -1850,6 +2154,44 @@ public class TricksterPathActivity extends AppCompatActivity {
         // 清理资源
         if (handler != null) {
             handler.removeCallbacksAndMessages(null);
+        }
+        
+        // 取消注册光线传感器
+        if (sensorManager != null) {
+            sensorManager.unregisterListener(lightSensorListener);
+        }
+        
+        // 释放音效播放器资源
+        releaseMediaPlayers();
+    }
+    
+    /**
+     * 释放所有MediaPlayer资源
+     */
+    private void releaseMediaPlayers() {
+        if (mpNani != null) {
+            mpNani.release();
+            mpNani = null;
+        }
+        if (mpYeehaw != null) {
+            mpYeehaw.release();
+            mpYeehaw = null;
+        }
+        if (mpLaugh != null) {
+            mpLaugh.release();
+            mpLaugh = null;
+        }
+        if (mpCollect != null) {
+            mpCollect.release();
+            mpCollect = null;
+        }
+        if (mpFail != null) {
+            mpFail.release();
+            mpFail = null;
+        }
+        if (mpWin != null) {
+            mpWin.release();
+            mpWin = null;
         }
     }
 }

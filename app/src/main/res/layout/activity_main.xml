@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout
+<ScrollView
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:fillViewport="true">
+
+<androidx.constraintlayout.widget.ConstraintLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
     android:background="@drawable/gradient_background"
     android:padding="16dp">
   <com.google.android.material.textview.MaterialTextView
@@ -17,12 +22,23 @@
       tools:ignore="MissingConstraints"
       />
 
+  <!-- 音乐控制按钮 -->
+  <com.google.android.material.floatingactionbutton.FloatingActionButton
+      android:id="@+id/btnToggleMusic"
+      android:layout_width="wrap_content"
+      android:layout_height="wrap_content"
+      android:layout_margin="16dp"
+      android:contentDescription="开关背景音乐"
+      app:layout_constraintTop_toTopOf="parent"
+      app:layout_constraintEnd_toEndOf="parent"
+      app:srcCompat="@android:drawable/ic_media_play" />
+
   <!-- Header with Cool Title -->
   <com.google.android.material.textview.MaterialTextView
       android:id="@+id/headerTitle"
       android:layout_width="wrap_content"
       android:layout_height="wrap_content"
-      android:text="Puzzle Game Challenge"
+      android:text="BrainOut"
       android:textSize="32sp"
       android:textStyle="bold"
       android:fontFamily="@font/roboto_condensed_variable"
@@ -37,7 +53,7 @@
       android:layout_marginTop="40dp" />
 
   <!-- Card for Puzzle Buttons -->
-  <androidx.cardview.widget.CardView    
+  <androidx.cardview.widget.CardView
       android:id="@+id/puzzleCard"
       android:layout_width="0dp"
       android:layout_height="wrap_content"
@@ -50,6 +66,7 @@
       app:layout_constraintWidth_percent="0.9"
       android:layout_marginTop="30dp"
       android:padding="16dp">
+      
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -69,8 +86,18 @@
           app:iconTint="@color/white"
           android:layout_marginBottom="12dp"
           style="@style/Widget.Material3.Button.ElevatedButton" />
+      <com.google.android.material.button.MaterialButton
+          android:id="@+id/btnMoveOverlapPuzzle"
+          android:layout_width="match_parent"
+          android:layout_height="wrap_content"
+          android:text="Move Overlap Puzzle"
+          android:textColor="@color/white"
+          app:backgroundTint="@color/primary"
+          app:cornerRadius="10dp"
+          app:iconTint="@color/white"
+          android:layout_marginBottom="12dp"
+          style="@style/Widget.Material3.Button.ElevatedButton" />
 
-      <!-- Tap Move Timer Puzzle Button -->
       <com.google.android.material.button.MaterialButton
           android:id="@+id/btnTapMoveTimerPuzzle"
           android:layout_width="match_parent"
@@ -83,12 +110,12 @@
           android:layout_marginBottom="12dp"
           style="@style/Widget.Material3.Button.ElevatedButton" />
 
-      <!-- Move Overlap Puzzle Button -->
+      <!-- VR -->
       <com.google.android.material.button.MaterialButton
-          android:id="@+id/btnMoveOverlapPuzzle"
+          android:id="@+id/btnVRGame"
           android:layout_width="match_parent"
           android:layout_height="wrap_content"
-          android:text="Find Ice Cream"
+          android:text="NFC猜拳王"
           android:textColor="@color/white"
           app:backgroundTint="@color/primary"
           app:cornerRadius="10dp"
@@ -243,3 +270,4 @@
       android:contentDescription="Login" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
+</ScrollView>

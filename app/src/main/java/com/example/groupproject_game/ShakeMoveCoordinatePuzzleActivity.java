@@ -25,6 +25,7 @@ import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.animation.AnticipateOvershootInterpolator;
 import android.view.animation.BounceInterpolator;
 import android.widget.ImageView;
@@ -82,7 +83,7 @@ public class ShakeMoveCoordinatePuzzleActivity extends AppCompatActivity impleme
     private int score = 0;
     private int moves = 0;
     private int level = 1;
-    private int maxLevel = 3;
+    private int maxLevel = 5;
     private int shakesRemaining = 3;
     private boolean isPieceGrabbed = false;
     private Random random = new Random();
@@ -137,6 +138,28 @@ public class ShakeMoveCoordinatePuzzleActivity extends AppCompatActivity impleme
         scoreText = findViewById(R.id.scoreText);
         timerText = findViewById(R.id.timerText);
         shakeFlash = findViewById(R.id.shakeFlash);
+        levelText = findViewById(R.id.levelText);
+
+        // 如果找不到关卡UI，则创建一个
+        if (levelText == null) {
+            levelText = new TextView(this);
+            levelText.setText("Level: " + level);
+            ConstraintLayout.LayoutParams params = new ConstraintLayout.LayoutParams(
+                ConstraintLayout.LayoutParams.WRAP_CONTENT,
+                ConstraintLayout.LayoutParams.WRAP_CONTENT
+            );
+            levelText.setLayoutParams(params);
+            levelText.setTextColor(Color.WHITE);
+            levelText.setTextSize(18);
+            if (gameLayout != null) {
+                gameLayout.addView(levelText);
+                ConstraintLayout.LayoutParams layoutParams = (ConstraintLayout.LayoutParams) levelText.getLayoutParams();
+                layoutParams.topToBottom = R.id.timerText;
+                layoutParams.startToStart = ConstraintLayout.LayoutParams.PARENT_ID;
+                layoutParams.setMargins(16, 8, 0, 0);
+                levelText.setLayoutParams(layoutParams);
+            }
+        }
 
         // 如果不存在则添加摇晃计数器UI元素
         shakesText = findViewById(R.id.shakesText);
@@ -152,7 +175,6 @@ public class ShakeMoveCoordinatePuzzleActivity extends AppCompatActivity impleme
             shakesText.setTextSize(18);
             if (gameLayout != null) {
                 gameLayout.addView(shakesText);
-                ConstraintLayout constraintLayout = (ConstraintLayout) gameLayout;
                 ConstraintLayout.LayoutParams layoutParams = (ConstraintLayout.LayoutParams) shakesText.getLayoutParams();
                 layoutParams.topToBottom = R.id.scoreText;
                 layoutParams.startToStart = ConstraintLayout.LayoutParams.PARENT_ID;
@@ -522,12 +544,13 @@ public class ShakeMoveCoordinatePuzzleActivity extends AppCompatActivity impleme
             levelTransition.setBackgroundColor(Color.parseColor("#3F51B5"));
             levelTransition.setAlpha(0f);
             
-            TextView levelText = new TextView(this);
-            levelText.setText("LEVEL " + level);
-            levelText.setTextSize(40);
-            levelText.setTextColor(Color.WHITE);
-            levelText.setGravity(android.view.Gravity.CENTER);
-            levelText.setAlpha(0f);
+            // 使用临时变量名避免与类成员变量冲突
+            TextView levelTransitionText = new TextView(this);
+            levelTransitionText.setText("LEVEL " + level);
+            levelTransitionText.setTextSize(40);
+            levelTransitionText.setTextColor(Color.WHITE);
+            levelTransitionText.setGravity(android.view.Gravity.CENTER);
+            levelTransitionText.setAlpha(0f);
             
             // 添加到布局
             ConstraintLayout.LayoutParams bgParams = new ConstraintLayout.LayoutParams(
@@ -542,7 +565,7 @@ public class ShakeMoveCoordinatePuzzleActivity extends AppCompatActivity impleme
             );
             textParams.topToTop = ConstraintLayout.LayoutParams.PARENT_ID;
             textParams.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID;
-            gameLayout.addView(levelText, textParams);
+            gameLayout.addView(levelTransitionText, textParams);
             
             // 淡入动画
             levelTransition.animate()
@@ -550,7 +573,7 @@ public class ShakeMoveCoordinatePuzzleActivity extends AppCompatActivity impleme
                 .setDuration(400)
                 .start();
             
-            levelText.animate()
+            levelTransitionText.animate()
                 .alpha(1f)
                 .setDuration(400)
                 .start();
@@ -571,6 +594,11 @@ public class ShakeMoveCoordinatePuzzleActivity extends AppCompatActivity impleme
             targetSlot.setX(random.nextInt(parentWidth - targetSlot.getWidth()));
             targetSlot.setY(random.nextInt(parentHeight/3) + parentHeight/10);
             
+            // 更新主UI显示当前关卡
+            if (levelText != null) {
+                levelText.setText("Level: " + level);
+            }
+            
             // 淡出动画和开始新关卡
             new Handler().postDelayed(() -> {
                 levelTransition.animate()
@@ -578,7 +606,7 @@ public class ShakeMoveCoordinatePuzzleActivity extends AppCompatActivity impleme
                     .setDuration(400)
                     .withEndAction(() -> {
                         gameLayout.removeView(levelTransition);
-                        gameLayout.removeView(levelText);
+                        gameLayout.removeView(levelTransitionText);
                         
                         if (currentState != GameState.COMPLETE) {
                             startGame();
@@ -586,7 +614,7 @@ public class ShakeMoveCoordinatePuzzleActivity extends AppCompatActivity impleme
                     })
                     .start();
                 
-                levelText.animate()
+                levelTransitionText.animate()
                     .alpha(0f)
                     .setDuration(400)
                     .start();
@@ -606,13 +634,6 @@ public class ShakeMoveCoordinatePuzzleActivity extends AppCompatActivity impleme
             decoy.clearAnimation();
             animateDecoyMovement(decoy);
         }
-        
-        // 更新UI显示当前关卡
-        runOnUiThread(() -> {
-            if (levelText != null) {
-                levelText.setText("Level: " + level);
-            }
-        });
     }
 
     private void addDecoys(int count) {
@@ -773,10 +794,23 @@ public class ShakeMoveCoordinatePuzzleActivity extends AppCompatActivity impleme
         score = 0;
         moves = 0;
         shakesRemaining = 3;
+        currentDecoySpeed = 1.0f; // 重置诱饵速度
+        consecutiveHits = 0; // 重置连击数
+
+        // 清除多余的诱饵
+        for (int i = decoyPieces.size() - 1; i > 0; i--) {
+            ImageView decoy = decoyPieces.remove(i);
+            if (decoy != null && decoy.getParent() != null) {
+                ((ViewGroup)decoy.getParent()).removeView(decoy);
+            }
+        }
 
         // 将UI更新放在主线程
         runOnUiThread(() -> {
             scoreText.setText("Score: 0");
+            if (levelText != null) {
+                levelText.setText("Level: " + level);
+            }
             resetPuzzlePiece();
             updateShakesDisplay();
         });
